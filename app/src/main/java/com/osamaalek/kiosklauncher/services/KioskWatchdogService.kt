@@ -1,10 +1,14 @@
 package com.osamaalek.kiosklauncher.services
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.Service
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
+import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -12,6 +16,8 @@ import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import androidx.core.app.NotificationCompat
+import com.osamaalek.kiosklauncher.R
 import com.osamaalek.kiosklauncher.ui.MainActivity
 
 class KioskWatchdogService : Service() {
@@ -21,6 +27,8 @@ class KioskWatchdogService : Service() {
     private var overlayView: View? = null
     private val handler = Handler(Looper.getMainLooper())
     private val checkInterval = 1000L // 1 segundo
+    private val NOTIFICATION_ID = 1001
+    private val CHANNEL_ID = "KioskWatchdogChannel"
 
     // Variável para evitar loops infinitos caso precisemos abrir algo intencionalmente
     companion object {
@@ -42,11 +50,37 @@ class KioskWatchdogService : Service() {
         super.onCreate()
         Log.d(TAG, "Watchdog Service Iniciado")
         
+        // 0. Torna este serviço um Foreground Service para não ser morto pelo Android
+        startForegroundService()
+        
         // 1. Cria a sobreposição invisível para bloquear a barra de notificações
         setupStatusBarOverlay()
         
         // 2. Inicia o monitoramento de evasão
         handler.postDelayed(watchdogRunnable, checkInterval)
+    }
+
+    private fun startForegroundService() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Serviço de Kiosk",
+                NotificationManager.IMPORTANCE_LOW // Low para não fazer barulho/vibrar
+            ).apply {
+                description = "Mantém o Kiosk em execução"
+            }
+            val manager = getSystemService(NotificationManager::class.java)
+            manager?.createNotificationChannel(channel)
+        }
+
+        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Monitoramento Kiosk")
+            .setContentText("O tablet está bloqueado")
+            .setSmallIcon(android.R.drawable.ic_lock_idle_lock) // Ícone genérico do sistema
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+
+        startForeground(NOTIFICATION_ID, notification)
     }
 
     override fun onDestroy() {
@@ -99,6 +133,8 @@ class KioskWatchdogService : Service() {
         }
     }
 
+    private var lastRedirectTime = 0L
+
     /**
      * ESTRATÉGIA 5 (Fully Kiosk):
      * Verifica constantemente qual é o pacote que está no topo da tela.
@@ -106,6 +142,14 @@ class KioskWatchdogService : Service() {
      */
     private fun checkForegroundApp() {
         if (isKioskTemporarilyDisabled) return
+        
+        // Se o nosso app JÁ ESTÁ na tela (foreground), ignoramos o delay do UsageStatsManager
+        // e não tentamos redirecionar de volta.
+        if (MainActivity.isAppInForeground) return
+
+        // Cooldown de 5 segundos após um redirecionamento para evitar loops enquanto o UsageStats se atualiza
+        val now = System.currentTimeMillis()
+        if (now - lastRedirectTime < 5000) return
 
         val usageStatsManager = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
         val endTime = System.currentTimeMillis()
@@ -132,6 +176,7 @@ class KioskWatchdogService : Service() {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
             startActivity(intent)
+            lastRedirectTime = System.currentTimeMillis()
         }
     }
 }

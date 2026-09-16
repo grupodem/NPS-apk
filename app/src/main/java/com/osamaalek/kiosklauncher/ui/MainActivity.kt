@@ -21,6 +21,7 @@ import android.util.Log
 import android.os.Process
 import android.os.Build
 
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import com.osamaalek.kiosklauncher.UpdateManager
@@ -32,8 +33,6 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-
-        checkAndRequestPermissions()
 
         lifecycleScope.launch {
             UpdateManager.checkAndUpdate(this@MainActivity)
@@ -54,10 +53,15 @@ class MainActivity : AppCompatActivity() {
         KioskUtil.startKioskMode(this)
     }
 
+    companion object {
+        var isAppInForeground = false
+    }
+
     override fun onResume() {
         super.onResume()
-        // Se todas as permissões já foram dadas, o Watchdog pode reiniciar normalmente caso estivesse pausado
-        KioskWatchdogService.isKioskTemporarilyDisabled = false
+        // O check de permissões agora fica no onResume para ser chamado novamente 
+        // sempre que o usuário voltar das telas de configurações.
+        checkAndRequestPermissions()
     }
 
     private fun checkAndRequestPermissions() {
@@ -87,7 +91,10 @@ class MainActivity : AppCompatActivity() {
 
         // 4. Iniciar o Watchdog Service se tudo estiver ok
         val watchdogIntent = Intent(this, KioskWatchdogService::class.java)
-        startService(watchdogIntent)
+        ContextCompat.startForegroundService(this, watchdogIntent)
+        
+        // 5. Iniciar o Modo Quiosque APENAS quando todas as permissões acima forem dadas.
+        KioskUtil.startKioskMode(this)
     }
 
     private fun hasUsageStatsPermission(): Boolean {
@@ -145,8 +152,14 @@ class MainActivity : AppCompatActivity() {
     }
     override fun onStart() {
         super.onStart()
-        KioskUtil.startKioskMode(this)
+        isAppInForeground = true
     }
+
+    override fun onStop() {
+        super.onStop()
+        isAppInForeground = false
+    }
+
     override fun onBackPressed() {
         if (supportFragmentManager.findFragmentById(R.id.fragmentContainerView) is AppsListFragment) supportFragmentManager.beginTransaction()
             .replace(R.id.fragmentContainerView, HomeFragment()).commit()

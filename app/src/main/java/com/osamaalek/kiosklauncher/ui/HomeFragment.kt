@@ -3,27 +3,32 @@ package com.osamaalek.kiosklauncher.ui
 import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.content.Context
-import android.net.ConnectivityManager
-import android.net.Network
-import android.net.NetworkCapabilities
-import android.net.NetworkRequest
+import android.content.Intent
 import android.os.Bundle
+import android.text.InputType
+import android.text.method.DigitsKeyListener
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import android.webkit.* // Import all webkit classes
 import android.widget.EditText
 import android.widget.ImageButton
 import androidx.fragment.app.Fragment
 import com.osamaalek.kiosklauncher.R
 import com.osamaalek.kiosklauncher.util.KioskUtil
+
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.osamaalek.kiosklauncher.UpdateManager
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.Dispatchers
+import com.osamaalek.kiosklauncher.services.KioskWatchdogService
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 
 /**
  * This fragment is modified to replace the default app launcher with a single, locked WebView
@@ -33,9 +38,10 @@ class HomeFragment : Fragment() {
 
     private lateinit var webView: WebView
     private lateinit var swipeRefreshLayout: SwipeRefreshLayout
-    
+
     private var connectivityManager: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var isOffline = false
 
     // The Google Form URL the kiosk will be locked to
     private val KIOSS_URL = "https://totem-nps-panel.lovable.app/totem"
@@ -75,60 +81,107 @@ class HomeFragment : Fragment() {
         }
 
         setupWebView()
-        loadWeb()
         setupNetworkMonitoring()
-    }
-    
-    private fun setupNetworkMonitoring() {
-        connectivityManager = requireContext().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-
-        networkCallback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                super.onAvailable(network)
-                Log.d(TAG, "Conexão de rede reestabelecida. Forçando reload da página.")
-                
-                // onAvailable roda em thread de background. Precisamos voltar para a Main Thread para atualizar a UI
-                viewLifecycleOwner.lifecycleScope.launch(Dispatchers.Main) {
-                    webView.reload()
-                }
-            }
-        }
-
-        val networkRequest = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .build()
-
-        connectivityManager?.registerNetworkCallback(networkRequest, networkCallback!!)
-    }
-
-    override fun onDestroyView() {
-        super.onDestroyView()
-        // Importante: Desregistrar para não vazar memória se o Kiosk fechar
-        networkCallback?.let {
-            connectivityManager?.unregisterNetworkCallback(it)
-        }
+        loadWeb()
     }
 
     private fun showPasswordDialog() {
         val editText = EditText(requireContext())
         editText.hint = "Senha"
-        editText.inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        editText.inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
+        // Garante que APENAS números de 0 a 9 possam ser digitados
+        editText.keyListener = DigitsKeyListener.getInstance("0123456789")
 
-        AlertDialog.Builder(requireContext())
+        val dialog = AlertDialog.Builder(requireContext())
             .setTitle("Sair do Quiosque")
             .setMessage("Digite a senha de administrador:")
             .setView(editText)
             .setPositiveButton("OK") { _, _ ->
                 val password = editText.text.toString().trim()
                 if (password == "0250") {
+                    // 1. Pausa o watchdog temporariamente para ele não tentar reabrir o app
+                    KioskWatchdogService.isKioskTemporarilyDisabled = true
+                    
+                    // 2. Para o serviço em segundo plano definitivamente
+                    val serviceIntent = Intent(requireContext(), KioskWatchdogService::class.java)
+                    requireContext().stopService(serviceIntent)
+
+                    // 3. Remove as restrições de administrador/kiosk
                     KioskUtil.stopKioskMode(requireActivity())
+                    
+                    // 4. Lança a tela inicial do Android (para forçar a saída do app)
+                    val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                        addCategory(Intent.CATEGORY_HOME)
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    startActivity(homeIntent)
+
+                    // 5. Finaliza a tela
                     requireActivity().finish()
                 } else {
                     android.widget.Toast.makeText(requireContext(), "Senha incorreta: $password", android.widget.Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("Cancelar", null)
-            .show()
+            .create()
+            
+        dialog.setOnShowListener {
+            // Limpa as flags que poderiam impedir o teclado de focar no dialog
+            dialog.window?.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+            
+            editText.requestFocus()
+            
+            // Um pequeno delay ajuda o Android a ter tempo de renderizar o dialog antes de subir o teclado
+            editText.postDelayed({
+                val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.showSoftInput(editText, InputMethodManager.SHOW_IMPLICIT)
+            }, 150)
+        }
+        
+        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+        dialog.show()
+    }
+
+    private fun setupNetworkMonitoring() {
+        connectivityManager = requireContext().getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        
+        val networkRequest = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+            
+        networkCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                super.onAvailable(network)
+                Log.d(TAG, "Conexão de rede disponível.")
+                if (isOffline) {
+                    isOffline = false
+                    Log.d(TAG, "Internet retornou. Recarregando página...")
+                    activity?.runOnUiThread {
+                        webView.reload()
+                    }
+                }
+            }
+
+            override fun onLost(network: Network) {
+                super.onLost(network)
+                Log.d(TAG, "Conexão de rede perdida.")
+                isOffline = true
+            }
+        }
+        
+        connectivityManager?.registerNetworkCallback(networkRequest, networkCallback!!)
+        
+        // Verifica o estado inicial
+        val activeNetwork = connectivityManager?.activeNetwork
+        val capabilities = connectivityManager?.getNetworkCapabilities(activeNetwork)
+        isOffline = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) != true
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        networkCallback?.let {
+            connectivityManager?.unregisterNetworkCallback(it)
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")

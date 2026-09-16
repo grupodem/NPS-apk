@@ -60,13 +60,13 @@ class KioskUtil {
             val devicePolicyManager =
                 context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
             val myDeviceAdmin = ComponentName(context, MyDeviceAdminReceiver::class.java)
-            if (devicePolicyManager.isAdminActive(myDeviceAdmin)) {
-                try {
-                    context.stopLockTask()
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
+            
+            try {
+                context.stopLockTask()
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
+            
             if (devicePolicyManager.isDeviceOwnerApp(context.packageName)) {
                 try {
                     devicePolicyManager.clearUserRestriction(

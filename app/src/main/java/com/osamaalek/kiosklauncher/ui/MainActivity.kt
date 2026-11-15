@@ -59,7 +59,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // O check de permissões agora fica no onResume para ser chamado novamente 
+        // Reativa a proteção do Watchdog caso estivesse desativada (ex: saída com senha anterior)
+        KioskWatchdogService.isKioskTemporarilyDisabled = false
+        // O check de permissões agora fica no onResume para ser chamado novamente
         // sempre que o usuário voltar das telas de configurações.
         checkAndRequestPermissions()
     }
@@ -83,13 +85,14 @@ class MainActivity : AppCompatActivity() {
 
         // 3. Checar se o Serviço de Acessibilidade está ligado
         if (!isAccessibilityServiceEnabled()) {
-            Toast.makeText(this, "Ative o Serviço de Acessibilidade do NPS D&M", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Ative o Serviço de Acessibilidade do NPS Express", Toast.LENGTH_LONG).show()
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
             startActivity(intent)
             return
         }
 
         // 4. Iniciar o Watchdog Service se tudo estiver ok
+        KioskWatchdogService.isKioskTemporarilyDisabled = false
         val watchdogIntent = Intent(this, KioskWatchdogService::class.java)
         ContextCompat.startForegroundService(this, watchdogIntent)
         

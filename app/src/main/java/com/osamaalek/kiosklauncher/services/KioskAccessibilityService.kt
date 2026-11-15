@@ -26,6 +26,12 @@ class KioskAccessibilityService : AccessibilityService() {
      * Se retornarmos "true", nós dizemos ao Android: "Já cuidei disso, não faça nada".
      */
     override fun onKeyEvent(event: KeyEvent): Boolean {
+        // Se o quiosque estiver pausado (ex: administrador saiu com senha ou atualização),
+        // permite que os botões do sistema funcionem normalmente.
+        if (KioskWatchdogService.isKioskTemporarilyDisabled) {
+            return super.onKeyEvent(event)
+        }
+
         val action = event.action
         val keyCode = event.keyCode
 

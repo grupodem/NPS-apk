@@ -49,7 +49,8 @@ class KioskWatchdogService : Service() {
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Watchdog Service Iniciado")
-        
+        isKioskTemporarilyDisabled = false
+
         // 0. Torna este serviço um Foreground Service para não ser morto pelo Android
         startForegroundService()
         
@@ -57,7 +58,19 @@ class KioskWatchdogService : Service() {
         setupStatusBarOverlay()
         
         // 2. Inicia o monitoramento de evasão
+        handler.removeCallbacks(watchdogRunnable)
         handler.postDelayed(watchdogRunnable, checkInterval)
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "Watchdog Service onStartCommand")
+        isKioskTemporarilyDisabled = false
+        if (overlayView == null) {
+            setupStatusBarOverlay()
+        }
+        handler.removeCallbacks(watchdogRunnable)
+        handler.postDelayed(watchdogRunnable, checkInterval)
+        return START_STICKY
     }
 
     private fun startForegroundService() {
@@ -97,6 +110,7 @@ class KioskWatchdogService : Service() {
      */
     private fun setupStatusBarOverlay() {
         try {
+            if (overlayView != null) return
             windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
             
             overlayView = View(this).apply {
@@ -127,6 +141,7 @@ class KioskWatchdogService : Service() {
         try {
             overlayView?.let {
                 windowManager?.removeView(it)
+                overlayView = null
             }
         } catch (e: Exception) {
             Log.e(TAG, "Falha ao remover sobreposição: ${e.message}")

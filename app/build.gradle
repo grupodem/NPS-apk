@@ -3,6 +3,13 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+Properties localProperties = new Properties()
+File localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withInputStream { localProperties.load(it) }
+}
+String npsKioskHeader = localProperties.getProperty('npsKioskHeader', '')
+
 android {
     namespace 'com.osamaalek.kiosklauncher'
     compileSdk 34
@@ -11,10 +18,12 @@ android {
         applicationId "com.osamaalek.kiosklauncher"
         minSdk 23
         targetSdk 34
-        versionCode 8
-        versionName "1.0.8"
+        versionCode 9
+        versionName "1.0.9"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField "String", "NPS_KIOSK_HEADER", "\"${npsKioskHeader}\""
     }
 
     signingConfigs {
@@ -35,10 +44,13 @@ android {
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
+            debuggable true
         }
         release {
             signingConfig signingConfigs.release
-            minifyEnabled false
+            debuggable false
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
@@ -48,6 +60,22 @@ android {
     }
     kotlinOptions {
         jvmTarget = '1.8'
+    }
+    buildFeatures {
+        buildConfig true
+    }
+}
+
+// Garante que o build de release falhe com mensagem clara se 'npsKioskHeader' não estiver configurado
+gradle.taskGraph.whenReady { taskGraph ->
+    boolean isReleaseBuild = taskGraph.allTasks.any {
+        it.name.toLowerCase().contains("release") && !it.name.toLowerCase().contains("test")
+    }
+    if (isReleaseBuild) {
+        String secret = localProperties.getProperty('npsKioskHeader')
+        if (secret == null || secret.trim().isEmpty()) {
+            throw new GradleException("ERRO NO BUILD DE RELEASE: A propriedade 'npsKioskHeader' não foi configurada no arquivo local.properties. Adicione a linha 'npsKioskHeader=<SEGREDO>' em local.properties para gerar o build de release assinado.")
+        }
     }
 }
 

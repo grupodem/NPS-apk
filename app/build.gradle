@@ -8,7 +8,8 @@ File localPropertiesFile = rootProject.file('local.properties')
 if (localPropertiesFile.exists()) {
     localPropertiesFile.withInputStream { localProperties.load(it) }
 }
-String npsKioskHeader = localProperties.getProperty('npsKioskHeader', '')
+// Lê de local.properties primeiro; se não existir, tenta variável de ambiente (GitHub Actions Secrets)
+String npsKioskHeader = localProperties.getProperty('npsKioskHeader') ?: System.getenv('NPS_KIOSK_HEADER') ?: ''
 
 android {
     namespace 'com.osamaalek.kiosklauncher'
@@ -18,8 +19,8 @@ android {
         applicationId "com.osamaalek.kiosklauncher"
         minSdk 23
         targetSdk 34
-        versionCode 9
-        versionName "1.0.9"
+        versionCode 10
+        versionName "1.1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
@@ -72,9 +73,9 @@ gradle.taskGraph.whenReady { taskGraph ->
         it.name.toLowerCase().contains("release") && !it.name.toLowerCase().contains("test")
     }
     if (isReleaseBuild) {
-        String secret = localProperties.getProperty('npsKioskHeader')
+        String secret = localProperties.getProperty('npsKioskHeader') ?: System.getenv('NPS_KIOSK_HEADER')
         if (secret == null || secret.trim().isEmpty()) {
-            throw new GradleException("ERRO NO BUILD DE RELEASE: A propriedade 'npsKioskHeader' não foi configurada no arquivo local.properties. Adicione a linha 'npsKioskHeader=<SEGREDO>' em local.properties para gerar o build de release assinado.")
+            throw new GradleException("ERRO NO BUILD DE RELEASE: A chave 'npsKioskHeader' não foi configurada em local.properties nem como variável de ambiente NPS_KIOSK_HEADER. Configure-a para gerar o build de release assinado.")
         }
     }
 }

@@ -20,8 +20,8 @@ import java.net.URL
 object UpdateManager {
 
     private const val TAG = "UpdateManager"
-    // URL do version.json gerado pelo GitHub Actions (Modifique para o nome do SEU usuário no GitHub)
-    private const val VERSION_URL = "https://github.com/matheusdem/NPS-apk/releases/latest/download/version.json"
+    // URL do version.json gerado pelo GitHub Actions
+    private const val VERSION_URL = "https://github.com/grupodem/NPS-apk/releases/latest/download/version.json"
     
     /**
      * Verifica no GitHub se há uma versão mais nova. 

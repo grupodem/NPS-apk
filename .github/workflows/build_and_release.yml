@@ -18,20 +18,22 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17' # Android Studio usa Java 17 por padrão atualmente
+          java-version: '17'
           cache: 'gradle'
 
       - name: Dar permissão de execução para o gradlew
         run: chmod +x ./gradlew
 
-      - name: Build do APK
-        run: ./gradlew assembleDebug # ou assembleRelease se você já tiver as chaves de assinatura configuradas
+      - name: Build do APK de Release
+        env:
+          NPS_KIOSK_HEADER: ${{ secrets.NPS_KIOSK_HEADER }}
+        run: ./gradlew assembleRelease
         
       - name: Upload APK como artefato temporário
         uses: actions/upload-artifact@v4
         with:
           name: KioskLauncher-APK
-          path: app/build/outputs/apk/debug/app-debug.apk # Caminho padrão do assembleDebug
+          path: app/build/outputs/apk/release/app-release.apk
 
   release:
     name: Create GitHub Release
@@ -58,8 +60,8 @@ jobs:
           # Cria um JSON simples com a versão e o link de download
           echo "{ \"version\": \"$VERSION_NAME\", \"apkUrl\": \"$DOWNLOAD_URL\" }" > version.json
           
-          # Renomeia o APK para um nome padrão
-          mv apk_folder/app-debug.apk kiosk-launcher.apk
+          # Renomeia o APK de release para o nome padrão
+          mv apk_folder/app-release.apk kiosk-launcher.apk
 
       - name: Publicar Release no GitHub
         uses: softprops/action-gh-release@v2
